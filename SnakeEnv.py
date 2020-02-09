@@ -44,6 +44,7 @@ class Snake:
 		self.direction = self.RIGHT
 		
 		# Snack position
+		self.snack_cell = (None,None)
 		self.get_new_snack()
 
 	def get_new_snack(self):
@@ -60,11 +61,12 @@ class Snake:
 		#Draw region is reverse to np array struct
 		cell_x , cell_y = screen.get_height()//self.play_field.shape[0] , screen.get_width()//self.play_field.shape[1]
 
-		#Boundary
+		# Colours
 		WHITE = (255,255,255)
 		RED   = (255,0,0)
 		BLUE  = (0,0,255)
 
+		#Boundary
 		pygame.draw.line(screen, WHITE , (0,0) , (0,screen.get_height()) , cell_y*2)
 		pygame.draw.line(screen, WHITE , (0,screen.get_height()) , (screen.get_width(),screen.get_height()) , cell_x*2)
 		pygame.draw.line(screen, WHITE , (0,0) , (screen.get_width(),0) , cell_x*2)
@@ -118,13 +120,15 @@ class Snake:
 		self.snake_body_points.append(update_cell)
 		self.play_field[update_cell]  = self.SNAKE_CELL
 
-		# Render in Play Field
 		self.play_field[self.snack_cell] = self.SNACK_CELL		
 
 		#Game End
 		if not ok:
 			return False
 		return True
+
+	def get_metrics(self):
+		pass
 
 def game_render_loop():
 
