@@ -17,7 +17,7 @@ class Snake:
 	EMPTY_CELL        = 0			# Empty cells needs to be zero because of init
 	BOUNDARY_CELL      = -1
 
-	SNAKE_TAIL_CELL    = -1
+	SNAKE_TAIL_CELL    = 1
 	SNAKE_BODY_CELL    = -1
 	SNAKE_HEAD_CELL    = 1
 	SNACK_CELL         = 2
@@ -31,8 +31,6 @@ class Snake:
 	DIRECTION_ARRAY = [UP,DOWN,LEFT,RIGHT]
 
 	LIMITTED_STEPS = 50
-
-	REWARD_OOOMPH = 1
 
 	def __init__(self,field_shape):
 		if len(field_shape.shape) == (2):
@@ -52,6 +50,8 @@ class Snake:
 
 		# Snake body
 		self.snake_body_points = [(1,1),(1,2)]
+		self.play_field[self.snake_body_points[-1]] = self.SNAKE_HEAD_CELL
+		self.play_field[self.snake_body_points[0]]  = self.SNAKE_TAIL_CELL 
 		# Snake dirction
 		self.direction = self.RIGHT
 		
@@ -67,6 +67,20 @@ class Snake:
 
 		#Step count init
 		self.limited_steps = 0 
+
+		#Is this game played by player
+		self.is_player_game = False
+
+	def reverse_dir(self):
+		if self.direction == self.UP:
+			return self.DOWN
+		if self.direction == self.DOWN:
+			return self.UP
+		if self.direction == self.LEFT:
+			return self.RIGHT
+		if self.direction == self.RIGHT:
+			return self.LEFT
+
 
 	def get_new_snack(self):
 		field_w , field_h = self.play_field.shape
@@ -109,15 +123,15 @@ class Snake:
 		pygame.draw.rect(screen,BLUE,(self.snack_cell[1]*cell_y,self.snack_cell[0]*cell_x,cell_y,cell_x))
 
 	def is_update_ok(self,direction):
-
-		if (
-			self.direction in (self.UP,self.DOWN) 
-			and  direction in (self.UP,self.DOWN)
-		   ) or (
-			self.direction in (self.RIGHT,self.LEFT)
-			and  direction in (self.RIGHT,self.LEFT)
-		   ):
-				direction = self.direction
+		if self.is_player_game:
+			if (
+				self.direction in (self.UP,self.DOWN) 
+				and  direction in (self.UP,self.DOWN)
+			   ) or (
+				self.direction in (self.RIGHT,self.LEFT)
+				and  direction in (self.RIGHT,self.LEFT)
+			   ):
+					direction = self.direction
 
 		last_point_x,last_point_y = self.snake_body_points[-1]
 		if direction == self.UP:
@@ -155,7 +169,7 @@ class Snake:
 		if self.play_field[update_cell] == self.SNACK_CELL:  
 			# New Snack position
 			self.get_new_snack()
-			self.reward = 50
+			self.reward = 25
 		else:
 			cleanup_cell=self.snake_body_points.pop(0)
 			tail_cell   =self.snake_body_points[-1]
@@ -175,6 +189,7 @@ class Snake:
 
 		#Game End
 		if not ok:
+			self.reward -= 50
 			self.game_running = False
 			return False
 		self.game_running = True
@@ -191,9 +206,7 @@ class Snake:
 
 	def get_reward(self):
 
-		if not self.game_running:
-			return self.REWARD_OOOMPH*(-1*self.LIMITTED_STEPS)/((50 + 1 ) *  self.LIMITTED_STEPS)
-		return  self.REWARD_OOOMPH*(self.reward)/((50 + 1 ) *  self.LIMITTED_STEPS)
+		return  self.reward
 
 def game_render_loop():
 
@@ -206,6 +219,7 @@ def game_render_loop():
 
 	# Game Init
 	snake = Snake(np.array([n_cells_x, n_cells_y]))
+	#snake.is_player_game = True
 
 	# Loop Init
 	running = True

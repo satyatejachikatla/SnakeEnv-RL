@@ -20,37 +20,42 @@ config = ConfigProto()
 config.gpu_options.allow_growth = True
 session = InteractiveSession(config=config)
 # For more repetitive results
+'''
 random.seed(1)
 np.random.seed(1)
 tf.compat.v1.set_random_seed(1)
-
+'''
 # Create models folder
 if not os.path.isdir('models'):
     os.makedirs('models')
 ##############################################
-
 def softmax(x):
 	"""Compute softmax values for each sets of scores in x."""
-
 	e_x = np.exp(x - np.max(x))
-
 	return e_x / e_x.sum()
 
+
+def softmax_with_zero(x):
+	i = np.argmin(x)
+	x = np.concatenate([x[:i] , x[i+1:]])
+	x = softmax(x)
+	x = np.concatenate([x[:i],np.array([0]),x[i:]])
+	return x
+
 REPLAY_MEMORY_SIZE = 50_000
-MIN_REPLAY_MEMORY_SIZE = 1_000
+MIN_REPLAY_MEMORY_SIZE = 1000
 SNAKE_FIELD_SHAPE = (SnakeEnv.n_cells_x,SnakeEnv.n_cells_y)
 INPUT_SHAPE = (SNAKE_FIELD_SHAPE[0],SNAKE_FIELD_SHAPE[1],1)
 SNAKE_DIRECTION_CHOICE = 4
-MINIBATCH_SIZE = 128
+MINIBATCH_SIZE =64
 DISCOUNT = 1
 UPDATE_TARGET_EVERY = 5
-MIN_TEST_ACC = 0.5
 
-EPISODES = 4_000
+EPISODES = 50_000
 
 #exploration
 epsilon = 1
-EPSILON_DECAY = 0.99975
+EPSILON_DECAY = 1#0.99975
 MIN_EPSILON = 0.25
 
 #tensorboard settings
@@ -59,7 +64,9 @@ AGGREGATE_STATS_EVERY = 50
 SHOW_PREVIEW = False
 
 #minimum reward to save
-MIN_REWARD = 0
+MIN_REWARD = -35
+
+DUMP_ACC = 0.7
 
 class DQNAgent():
 	def __init__(self,ids,model=None):
@@ -102,13 +109,14 @@ class DQNAgent():
 		#model.add(tf.keras.layers.LocallyConnected1D(16,kernel_size=16,strides=16,activation=tf.nn.relu))
 		model.add(tf.keras.layers.InputLayer(input_shape=INPUT_SHAPE))
 		model.add(tf.keras.layers.Flatten())
-		model.add(tf.keras.layers.Dense(64,activation=tf.nn.relu,kernel_regularizer=regularizers.l2(0.001),activity_regularizer=regularizers.l1(0.001)))
-		#model.add(tf.keras.layers.Dense(32,activation=tf.nn.relu,kernel_regularizer=regularizers.l2(0.001),activity_regularizer=regularizers.l1(0.001)))
-		model.add(tf.keras.layers.Dense(16,activation=tf.nn.relu,kernel_regularizer=regularizers.l2(0.001),activity_regularizer=regularizers.l1(0.001)))
+		model.add(tf.keras.layers.Dense(64))#,activation=tf.nn.relu,kernel_regularizer=regularizers.l2(0.001),activity_regularizer=regularizers.l1(0.001)))
+		#model.add(tf.keras.layers.Dense(32))#,activation=tf.nn.relu,kernel_regularizer=regularizers.l2(0.001),activity_regularizer=regularizers.l1(0.001)))
+		model.add(tf.keras.layers.Dense(16))#,activation=tf.nn.relu,kernel_regularizer=regularizers.l2(0.001),activity_regularizer=regularizers.l1(0.001)))
 		model.add(tf.keras.layers.Dense(SNAKE_DIRECTION_CHOICE,activation=tf.nn.softmax))
 
 		model.compile(optimizer=tf.keras.optimizers.Adam(),
-					  loss='categorical_crossentropy',
+					  #loss='mse',
+					  loss='mse',
 					  metrics=['accuracy']
 					  )
 		return model
@@ -120,11 +128,10 @@ class DQNAgent():
 		return self.model.predict(np.array(state).reshape(-1,*state.shape))[0]
 
 	def train(self,terminal_state):
-		global MIN_TEST_ACC
-
+		global DUMP_ACC
 		if len(self.replay_memory) < MIN_REPLAY_MEMORY_SIZE:
 			return
-
+	
 		minibatch = random.sample(self.replay_memory,MINIBATCH_SIZE)
 
 		current_states = np.array([transition[0] for transition in minibatch])
@@ -137,25 +144,22 @@ class DQNAgent():
 		y = []
 
 		for index, (current_state, action, reward, new_current_state, done) in enumerate(minibatch):
-			before = np.array(current_qs_list[index])
+			#before = np.array(current_qs_list[index])
+			current_qs = current_qs_list[index]
 			if not done:
 				furture_q = np.array(future_qs_list[index])
 				max_future_q_index = np.argmax(furture_q)
 				new_q = reward + DISCOUNT * furture_q[max_future_q_index]
-				furture_q[max_future_q_index] = new_q
-				furture_q = softmax(furture_q)
-				current_qs = furture_q
-
-			else:
-				new_q = 0
-				current_qs = current_qs_list[index]
 				current_qs[np.argmax(action)] = new_q
-				current_qs = softmax(current_qs)
-				
+
+			if done:
+				new_q = 0
+				current_qs[np.argmax(action)] = new_q
 
 			X.append(current_state)
 			y.append(current_qs)
 
+		#print('Before',before,'After',current_qs)
 		self.model.fit(np.array(X),np.array(y),batch_size=MINIBATCH_SIZE,
 			verbose=1, shuffle=False)#, callbacks=[self.tensorboard] if terminal_state else None)
 
@@ -163,22 +167,55 @@ class DQNAgent():
 		if terminal_state:
 			self.target_update_counter += 1
 
-		if self.model.evaluate(np.array(X),np.array(y),batch_size=MINIBATCH_SIZE)[1] > MIN_TEST_ACC:
-			self.replay_memory.clear() # Remove all the old model action memory
-			MIN_TEST_ACC += 0.1
-			MIN_TEST_ACC = min(MIN_TEST_ACC,0.95)
-
 		if self.target_update_counter > UPDATE_TARGET_EVERY:
 			self.target_model.set_weights(self.model.get_weights())
 			self.target_update_counter = 0
-			print('Before',before,'After',current_qs)
+
+			#purge good outcome samples
+			current_states = np.array([transition[0] for transition in self.replay_memory])
+			current_qs_list = self.model.predict(current_states)
+
+			new_current_states = np.array([transition[3] for transition in self.replay_memory])
+			future_qs_list = self.target_model.predict(new_current_states)
+
+			index_list = []
+
+			X = []
+			y = []
+
+			for index, (current_state, action, reward, new_current_state, done) in enumerate(self.replay_memory):
+				current_qs = current_qs_list[index]
+				if not done:
+					furture_q = np.array(future_qs_list[index])
+					max_future_q_index = np.argmax(furture_q)
+					new_q = reward + DISCOUNT * furture_q[max_future_q_index]
+					current_qs[np.argmax(action)] = new_q
+					current_qs = softmax(current_qs)
+
+				if done:
+					new_q = 0
+					current_qs[np.argmax(action)] = new_q
+					current_qs = softmax_with_zero(current_qs)
+
+				X.append(current_state)
+				y.append(current_qs)
+			
+			loss,acc = self.target_model.evaluate(np.array(X),np.array(y),verbose=0)
+			if acc > DUMP_ACC:
+				print(loss,acc)
+				self.replay_memory.clear()
+
 
 
 
 if __name__ == '__main__':
 
-	from glob import glob
-	pre_trained_models = sorted(glob('models/Agent*'))
+	import sys
+	if len(sys.argv) < 2:
+		from glob import glob
+		pre_trained_models = sorted(glob('models/Agent*'))
+	else:
+		pre_trained_models = ['models/'+sys.argv[1]]
 	model = None if len(pre_trained_models) == 0 else tf.keras.models.load_model(pre_trained_models[-1])
 
 	agent = DQNAgent(1,model)
@@ -199,7 +236,11 @@ if __name__ == '__main__':
 			else:
 				num_actions = len(agent.env.DIRECTION_ARRAY)
 				action = [0]*num_actions
-				action[np.random.randint(0,num_actions)] = 1
+				while True:
+					act = np.random.randint(0,num_actions)
+					if act != agent.env.reverse_dir():
+						action[act] = 1
+						break
 
 			running = agent.env.update_with_one_hot(action)
 			done = not running
