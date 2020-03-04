@@ -17,7 +17,7 @@ class Snake:
 	EMPTY_CELL        = 0			# Empty cells needs to be zero because of init
 	BOUNDARY_CELL      = -1
 
-	SNAKE_TAIL_CELL    = 1
+	SNAKE_TAIL_CELL    = -1
 	SNAKE_BODY_CELL    = -1
 	SNAKE_HEAD_CELL    = 1
 	SNACK_CELL         = 2
@@ -169,7 +169,7 @@ class Snake:
 		if self.play_field[update_cell] == self.SNACK_CELL:  
 			# New Snack position
 			self.get_new_snack()
-			self.reward = 25
+			self.reward = 50
 		else:
 			cleanup_cell=self.snake_body_points.pop(0)
 			tail_cell   =self.snake_body_points[-1]
@@ -189,7 +189,7 @@ class Snake:
 
 		#Game End
 		if not ok:
-			self.reward -= 50
+			self.reward -= 25
 			self.game_running = False
 			return False
 		self.game_running = True
